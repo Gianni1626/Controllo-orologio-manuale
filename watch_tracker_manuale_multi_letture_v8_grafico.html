@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>watch_tracker_manuale_multi_v4</title>
+  <style>
+    :root{--bg:#0f172a;--panel:#111827;--panel2:#1f2937;--line:#334155;--text:#e5e7eb;--muted:#94a3b8;--ok:#16a34a;--warn:#d97706;--acc:#0ea5e9;--bad:#dc2626}
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+    body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0}
+    .wrap{max-width:1200px;margin:0 auto;padding:14px}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:14px}
+    h1,h2,h3{margin:0 0 10px} p{margin:0 0 10px;color:var(--muted)}
+    .two{display:grid;gap:14px}
+    .videoWrap{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#000;aspect-ratio:4/3}
+    video,canvas{display:block;width:100%;height:100%;object-fit:cover;background:#000}
+    .toolbar{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px}
+    .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .field{display:grid;gap:6px;margin-bottom:10px}
+    label{font-size:12px;color:#cbd5e1;text-transform:uppercase;letter-spacing:.05em}
+    input,textarea,button,select{width:100%;padding:13px 12px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:16px}
+    textarea{min-height:70px;resize:vertical}
+    button{border:none;font-weight:700;background:var(--acc);cursor:pointer}
+    button.ok{background:var(--ok)} button.warn{background:var(--warn)} button.bad{background:var(--bad)} button.secondary{background:#475569}
+    .stats{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}
+    .stat{background:#0b1220;border:1px solid var(--line);border-radius:14px;padding:12px}
+    .k{font-size:12px;color:var(--muted);margin-bottom:4px;text-transform:uppercase}
+    .v{font-size:18px;font-weight:700;word-break:break-word}
+    table{width:100%;border-collapse:collapse;font-size:14px}
+    th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+    th{font-size:12px;color:#cbd5e1;text-transform:uppercase}
+    .note{font-size:13px;color:#dbe7fb;background:#0f1727;border-left:4px solid var(--warn);padding:10px 12px;border-radius:10px;line-height:1.4}
+    .small{font-size:12px;color:var(--muted)}
+    .error{background:#2a1014;border:1px solid #7f1d1d;color:#fecaca;border-radius:12px;padding:10px;display:none;white-space:pre-wrap}
+    @media (min-width:900px){.two{grid-template-columns:1.02fr .98fr}.toolbar{grid-template-columns:repeat(4,1fr)}.stats{grid-template-columns:1fr 1fr}}
+  
+button:active{
+  transform: scale(0.97);
+  filter: brightness(1.15);
+}
+button.clicked{
+  animation: btnFlash 0.22s ease;
+}
+@keyframes btnFlash{
+  0%{ box-shadow: 0 0 0 rgba(255,255,255,0); }
+  50%{ box-shadow: 0 0 12px rgba(255,255,255,0.45); }
+  100%{ box-shadow: 0 0 0 rgba(255,255,255,0); }
+}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Watch Tracker Manuale Multi-lettura</h1>
+  <p>Versione manuale senza AI. Per ogni lettura salva lo sfalsamento temporale tra tempo standard e tempo dell’orologio. Lo scarto tra letture è la differenza tra questi sfalsamenti, espressa in secondi/giorno.</p>
+
+  <div class="two">
+    <div>
+      <div class="panel">
+        <h2>1. Fotocamera</h2>
+        <div class="videoWrap">
+          <video id="video" autoplay playsinline muted></video>
+          <canvas id="canvas" style="display:none"></canvas>
+        </div>
+        <div class="toolbar">
+          <button id="startCameraBtn">Avvia camera</button>
+          <button id="captureBtn" class="ok">Scatta foto</button>
+          <button id="retakeBtn" class="secondary">Rifai foto</button>
+          <button id="saveJsonBtn" class="warn">Salva JSON</button>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="k">Ora reale scatto</div><div class="v" id="shotTs">—</div></div>
+          <div class="stat"><div class="k">Stato</div><div class="v" id="state">In attesa</div></div>
+        </div>
+        <div class="note" style="margin-top:12px">Le foto non vengono salvate nel JSON. Servono solo per fissare il momento esatto dello scatto.</div>
+      </div>
+
+      <div class="panel">
+        <h2>2. Impostazioni calcolo</h2>
+        <div class="field">
+          <label>Formato ora inserita</label>
+          <select id="dialCycle">
+            <option value="12" selected>Quadrante 12 ore</option>
+            <option value="24">Ora 24 ore</option>
+          </select>
+        </div>
+        <div class="note">Lo sfalsamento di ogni lettura viene calcolato come: <b>tempo orologio - tempo standard</b>. Lo scarto medio tra due letture è la differenza tra i due sfalsamenti divisa per il tempo trascorso.</div>
+      </div>
+
+      <div class="panel">
+        <h2>3. Report</h2>
+        <div class="stats">
+          <div class="stat"><div class="k">Numero letture</div><div class="v" id="countOut">0</div></div>
+          <div class="stat"><div class="k">Variazione sfalsamento vs prima lettura</div><div class="v" id="totalDriftOut">—</div></div>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="k">Scarto medio complessivo</div><div class="v" id="avgPerDayOut">—</div></div>
+          <div class="stat"><div class="k">Ultimo scarto medio tra le letture</div><div class="v" id="lastRateOut">—</div></div>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="k">Nome file salvataggio</div><div class="v" id="filenameOut">—</div></div>
+          <div class="stat"><div class="k">Modalità salvataggio</div><div class="v" id="saveModeOut">Download</div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>4. Grafico</h2>
+        <div class="field">
+          <label>Vista grafico</label>
+          <select id="chartMode">
+            <option value="deviation" selected>Deviazione in secondi</option>
+            <option value="rate">Scarto in secondi/giorno</option>
+            <option value="both">Entrambi</option>
+          </select>
+        </div>
+        <canvas id="trendChart" height="320"></canvas>
+        <div class="small" style="margin-top:8px">Blu = tempo che l'orologio dovrebbe indicare mantenendo costante lo sfalsamento della prima lettura. Arancione = deviazione dell'orologio in secondi rispetto a quel riferimento. La vista alternativa mostra anche lo scarto in secondi/giorno.</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>5. Sessione</h2>
+        <div class="field"><label>Nome orologio</label><input id="watchName" placeholder="Es. Rolex Datejust 36"></div>
+        <div class="field"><label>Carica JSON esistente</label><input id="fileLoader" type="file" accept=".json,application/json"></div>
+        <div class="row3">
+          <div class="field"><label>Ore</label><input id="h" type="number" min="0" max="23" placeholder="HH"></div>
+          <div class="field"><label>Minuti</label><input id="m" type="number" min="0" max="59" placeholder="MM"></div>
+          <div class="field"><label>Secondi</label><input id="s" type="number" min="0" max="59" placeholder="SS"></div>
+        </div>
+        
+        <div class="toolbar">
+          <button id="newBtn" class="ok">Nuova sessione</button>
+          <button id="saveMeasureBtn">Salva lettura</button>
+          <button id="deleteLastBtn" class="secondary">Elimina ultima</button>
+          <button id="resetBtn" class="bad">Reset</button>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="k">Ora letta</div><div class="v" id="manualTime">—</div></div>
+          <div class="stat"><div class="k">Sfalsamento corrente</div><div class="v" id="offsetOut">—</div></div>
+        </div>
+        <div id="errorBox" class="error"></div>
+      </div>
+
+      <div class="panel">
+        <h2>6. Storico letture</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Data/Ora scatto</th>
+              <th>Ora orologio</th>
+              <th>Sfalsamento tempo standard</th>
+              <th>Scarto medio tra le letture</th>
+              <th>Scarto temporale tra letture (s)</th>
+            </tr>
+          </thead>
+          <tbody id="history"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const video=document.getElementById('video'), canvas=document.getElementById('canvas'), ctx=canvas.getContext('2d');
+const shotTs=document.getElementById('shotTs'), stateEl=document.getElementById('state'), watchNameEl=document.getElementById('watchName'), fileLoader=document.getElementById('fileLoader'), hEl=document.getElementById('h'), mEl=document.getElementById('m'), sEl=document.getElementById('s'), manualTimeEl=document.getElementById('manualTime'), offsetOut=document.getElementById('offsetOut'), historyEl=document.getElementById('history'), errorBox=document.getElementById('errorBox'), dialCycleEl=document.getElementById('dialCycle');
+const countOut=document.getElementById('countOut'), totalDriftOut=document.getElementById('totalDriftOut'), avgPerDayOut=document.getElementById('avgPerDayOut'), lastRateOut=document.getElementById('lastRateOut'), filenameOut=document.getElementById('filenameOut'), saveModeOut=document.getElementById('saveModeOut');
+const trendChart=document.getElementById('trendChart'), trendCtx=trendChart.getContext('2d'), chartModeEl=document.getElementById('chartMode');
+
+let mediaStream=null, capture=null, data={version:4,watch:'',dial_cycle_hours:12,measurements:[]};
+let openedFilename=null;
+
+function showError(msg){errorBox.style.display='block';errorBox.textContent=msg}
+function clearError(){errorBox.style.display='none';errorBox.textContent=''}
+function pad(v){return String(v).padStart(2,'0')}
+function secOfDay(d){return d.getHours()*3600+d.getMinutes()*60+d.getSeconds()}
+function hmsToSec(h,m,s){return h*3600+m*60+s}
+function formatSignedSeconds(sec){const sign=sec>=0?'+':'-';const abs=Math.abs(Math.round(sec));const hh=Math.floor(abs/3600),mm=Math.floor((abs%3600)/60),ss=abs%60;return `${sign}${pad(hh)}:${pad(mm)}:${pad(ss)} (${Math.round(sec)} s)`}
+function perDayText(v){const x=Math.round(v*100)/100;return `${x>0?'+':''}${x} s/giorno`}
+function currentCycleHours(){return parseInt(dialCycleEl.value)||12}
+function currentFilename(){if(openedFilename) return openedFilename; const base=(watchNameEl.value.trim()||data.watch||'watch').replace(/[\\/:*?"<>|]+/g,'_'); return base + '_manuale_multi.json'}
+function refreshFileInfo(){filenameOut.innerText=currentFilename(); saveModeOut.innerText='Download con stesso nome'}
+
+function offsetForReading(realSeconds, watchSeconds, cycleHours){
+  const cycle = cycleHours * 3600;
+  let offset = watchSeconds - realSeconds;
+  while(offset > cycle/2) offset -= cycle;
+  while(offset < -cycle/2) offset += cycle;
+  return offset;
+}
+
+function watchElapsedBetween(prev, curr, cycleHours){
+  const cycle = cycleHours * 3600;
+  const raw = curr.watch_seconds - prev.watch_seconds;
+  const realElapsed = (curr.real_ts - prev.real_ts) / 1000;
+  const k = Math.round((realElapsed - raw) / cycle);
+  return raw + k * cycle;
+}
+
+function rateBetween(prev, curr){
+  const cycle = data.dial_cycle_hours || currentCycleHours();
+  const realElapsed = (curr.real_ts - prev.real_ts) / 1000;
+  if(realElapsed <= 0) return null;
+  const offsetDiff = curr.offset_seconds - prev.offset_seconds;
+  return offsetDiff / (realElapsed / 86400);
+}
+
+function totalAverageRate(ms){
+  if(ms.length < 2) return null;
+  const first = ms[0], last = ms[ms.length-1];
+  const realElapsed = (last.real_ts - first.real_ts) / 1000;
+  if(realElapsed <= 0) return null;
+  const offsetDiff = last.offset_seconds - first.offset_seconds;
+  return offsetDiff / (realElapsed / 86400);
+}
+
+function updateManualReadout(){
+  const hh=parseInt(hEl.value),mm=parseInt(mEl.value),ss=parseInt(sEl.value);
+  if([hh,mm,ss].some(Number.isNaN)){manualTimeEl.innerText='—'; offsetOut.innerText='—'; return;}
+  manualTimeEl.innerText=`${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+  if(capture){
+    const watchSeconds=hmsToSec(hh,mm,ss);
+    const realSeconds=secOfDay(capture.shot);
+    const offset=offsetForReading(realSeconds, watchSeconds, currentCycleHours());
+    offsetOut.innerText=formatSignedSeconds(offset);
+  } else {
+    offsetOut.innerText='—';
+  }
+}
+
+async function startCamera(){
+  try{
+    clearError();
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Fotocamera non supportata in questo contesto');
+    if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop()); mediaStream=null;}
+    mediaStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+    video.srcObject=mediaStream; video.style.display='block'; canvas.style.display='none'; capture=null; shotTs.innerText='—'; stateEl.innerText='Camera attiva'; updateManualReadout();
+  }catch(err){showError('Camera: '+err.message); stateEl.innerText='Errore camera';}
+}
+
+function capturePhoto(){
+  try{
+    clearError();
+    if(!video.videoWidth) throw new Error('Camera non pronta');
+    canvas.width=video.videoWidth; canvas.height=video.videoHeight; ctx.drawImage(video,0,0);
+    capture={shot:new Date()};
+    shotTs.innerText=capture.shot.toLocaleString();
+    stateEl.innerText='Foto acquisita';
+    video.style.display='none'; canvas.style.display='block';
+    updateManualReadout();
+  }catch(err){showError(err.message);}
+}
+
+function retakePhoto(){
+  capture=null; video.style.display='block'; canvas.style.display='none'; shotTs.innerText='—'; stateEl.innerText=mediaStream?'Camera attiva':'In attesa'; updateManualReadout();
+}
+
+function newSession(){
+  clearError();
+  openedFilename=null;
+  data={version:4,watch:watchNameEl.value.trim()||'Orologio',dial_cycle_hours:currentCycleHours(),measurements:[]};
+  renderAll();
+  refreshFileInfo();
+  stateEl.innerText='Nuova sessione pronta';
+}
+
+function buildMeasurement(){
+  if(!capture) throw new Error('Scatta prima una foto');
+  const hh=parseInt(hEl.value), mm=parseInt(mEl.value), ss=parseInt(sEl.value);
+  if([hh,mm,ss].some(Number.isNaN)) throw new Error('Inserisci ore, minuti e secondi');
+  if(hh<0||hh>23||mm<0||mm>59||ss<0||ss>59) throw new Error('Ora non valida');
+  const watchSeconds = hmsToSec(hh,mm,ss);
+  const realSeconds = secOfDay(capture.shot);
+  const cycleHours = currentCycleHours();
+  const offset = offsetForReading(realSeconds, watchSeconds, cycleHours);
+  return {
+    real_ts: capture.shot.getTime(),
+    real_iso: capture.shot.toISOString(),
+    real_seconds_of_day: realSeconds,
+    watch_seconds: watchSeconds,
+    watch_text: `${pad(hh)}:${pad(mm)}:${pad(ss)}`,
+    offset_seconds: offset
+  };
+}
+
+function saveMeasurement(){
+  try{
+    clearError();
+    if(!data || !Array.isArray(data.measurements)) newSession();
+    if(!data.watch) data.watch = watchNameEl.value.trim() || 'Orologio';
+    data.dial_cycle_hours = currentCycleHours();
+    data.measurements.push(buildMeasurement());
+    renderAll();
+    stateEl.innerText='Lettura salvata';
+  }catch(err){showError(err.message);}
+}
+
+function deleteLast(){
+  clearError();
+  if(data.measurements && data.measurements.length){
+    data.measurements.pop();
+    renderAll();
+    stateEl.innerText='Ultima lettura eliminata';
+  }
+}
+
+function renderHistory(){
+  historyEl.innerHTML='';
+  const ms=data.measurements||[];
+  if(ms.length===0){
+    historyEl.innerHTML='<tr><td colspan="6">Nessuna lettura</td></tr>';
+    return;
+  }
+  ms.forEach((m,i)=>{
+    let rateTxt='—';
+    if(i>0){
+      const rate=rateBetween(ms[i-1],m);
+      if(rate!=null) rateTxt=perDayText(rate);
+    }
+    const tr=document.createElement('tr');
+    let deltaTxt='—';
+    if(i>0){
+      const delta = m.offset_seconds - ms[i-1].offset_seconds;
+      deltaTxt = Math.round(delta);
+    }
+    tr.innerHTML=`<td>${i+1}</td><td>${new Date(m.real_ts).toLocaleString()}</td><td>${m.watch_text}</td><td>${formatSignedSeconds(m.offset_seconds)}</td><td>${rateTxt}</td><td>${deltaTxt}</td>`;
+    historyEl.appendChild(tr);
+  });
+}
+
+function renderSummary(){
+  const ms=data.measurements||[];
+  countOut.innerText=String(ms.length);
+  if(ms.length<2){
+    totalDriftOut.innerText='—';
+    avgPerDayOut.innerText='—';
+    lastRateOut.innerText='—';
+    return;
+  }
+  const first=ms[0], last=ms[ms.length-1];
+  const offsetVariation = last.offset_seconds - first.offset_seconds;
+  const avgPerDay = totalAverageRate(ms);
+  const lastRate = rateBetween(ms[ms.length-2], ms[ms.length-1]);
+  totalDriftOut.innerText = formatSignedSeconds(offsetVariation);
+  avgPerDayOut.innerText = avgPerDay==null ? '—' : perDayText(avgPerDay);
+  lastRateOut.innerText = lastRate==null ? '—' : perDayText(lastRate);
+}
+
+function fitChart(){
+  const rect=trendChart.parentElement.getBoundingClientRect();
+  trendChart.width=Math.max(340,Math.floor(rect.width-4));
+  trendChart.height=320;
+}
+
+function drawTrend(){
+  fitChart();
+  trendCtx.clearRect(0,0,trendChart.width,trendChart.height);
+  const ms=data.measurements||[];
+  if(ms.length===0){
+    trendCtx.fillStyle='#94a3b8';
+    trendCtx.font='16px Arial';
+    trendCtx.fillText('Nessun dato disponibile',20,30);
+    return;
+  }
+
+  const mode = chartModeEl ? chartModeEl.value : 'deviation';
+  const first = ms[0];
+  const baselineOffset = first.offset_seconds;
+
+  const expectedWatchSeconds = ms.map(m => {
+    const realSec = m.real_seconds_of_day != null ? m.real_seconds_of_day : secOfDay(new Date(m.real_ts));
+    let v = realSec + baselineOffset;
+    const cycle = (data.dial_cycle_hours || currentCycleHours()) * 3600;
+    while(v < 0) v += cycle;
+    while(v >= cycle) v -= cycle;
+    return v;
+  });
+
+  const deviations = ms.map((m, i) => {
+    const cycle = (data.dial_cycle_hours || currentCycleHours()) * 3600;
+    let d = m.watch_seconds - expectedWatchSeconds[i];
+    while(d > cycle/2) d -= cycle;
+    while(d < -cycle/2) d += cycle;
+    return d;
+  });
+
+  const rates=[null];
+  for(let i=1;i<ms.length;i++) rates.push(rateBetween(ms[i-1],ms[i]));
+
+  let series = [];
+  if(mode === 'deviation' || mode === 'both') series.push({name:'dev', data:deviations, color:'#f59e0b', point:'square'});
+  if(mode === 'rate' || mode === 'both') series.push({name:'rate', data:rates, color:'#38bdf8', point:'circle'});
+
+  const vals = [];
+  series.forEach(s => s.data.forEach(v => { if(v !== null && Number.isFinite(v)) vals.push(v); }));
+  if(vals.length === 0){
+    trendCtx.fillStyle='#94a3b8';
+    trendCtx.font='16px Arial';
+    trendCtx.fillText('Dati insufficienti',20,30);
+    return;
+  }
+
+  let min=Math.min(...vals,-10), max=Math.max(...vals,10);
+  if(min===max){min-=1;max+=1;}
+  const padY=(max-min)*0.15; min-=padY; max+=padY;
+  const left=56,right=10,top=12,bottom=32,w=trendChart.width-left-right,h=trendChart.height-top-bottom;
+  function xPos(i){return ms.length===1?left+w/2:left+i*w/(ms.length-1)}
+  function yPos(v){return top+(max-v)*h/(max-min)}
+
+  trendCtx.strokeStyle='#334155'; trendCtx.fillStyle='#94a3b8'; trendCtx.font='11px Arial';
+  for(let g=0;g<=4;g++){
+    const y=top+g*h/4, val=max-g*(max-min)/4;
+    trendCtx.beginPath(); trendCtx.moveTo(left,y); trendCtx.lineTo(left+w,y); trendCtx.stroke();
+    trendCtx.fillText(Math.round(val)+' s',4,y+4);
+  }
+  if(min<0&&max>0){
+    const yz=yPos(0);
+    trendCtx.strokeStyle='#64748b';
+    trendCtx.beginPath(); trendCtx.moveTo(left,yz); trendCtx.lineTo(left+w,yz); trendCtx.stroke();
+  }
+  trendCtx.strokeStyle='#cbd5e1';
+  trendCtx.beginPath(); trendCtx.moveTo(left,top); trendCtx.lineTo(left,top+h); trendCtx.lineTo(left+w,top+h); trendCtx.stroke();
+
+  // x-axis labels
+  trendCtx.fillStyle='#94a3b8';
+  trendCtx.font='10px Arial';
+  ms.forEach((m,i)=>{
+    const x=xPos(i);
+    trendCtx.fillText(String(i+1), x-3, top+h+16);
+  });
+
+  series.forEach(s => {
+    trendCtx.strokeStyle=s.color;
+    trendCtx.lineWidth=2;
+    trendCtx.beginPath();
+    let started=false;
+    s.data.forEach((v,i)=>{
+      if(v===null || !Number.isFinite(v)) return;
+      const x=xPos(i), y=yPos(v);
+      if(!started){ trendCtx.moveTo(x,y); started=true; } else { trendCtx.lineTo(x,y); }
+    });
+    trendCtx.stroke();
+
+    trendCtx.fillStyle=s.color;
+    s.data.forEach((v,i)=>{
+      if(v===null || !Number.isFinite(v)) return;
+      const x=xPos(i), y=yPos(v);
+      if(s.point==='square'){
+        trendCtx.fillRect(x-3,y-3,6,6);
+      }else{
+        trendCtx.beginPath(); trendCtx.arc(x,y,4,0,Math.PI*2); trendCtx.fill();
+      }
+    });
+  });
+
+  // Legend and explanatory text
+  trendCtx.font='11px Arial';
+  let lx = left, ly = trendChart.height - 8;
+  if(mode === 'deviation' || mode === 'both'){
+    trendCtx.fillStyle='#f59e0b';
+    trendCtx.fillRect(lx, ly-8, 10, 10);
+    trendCtx.fillStyle='#cbd5e1';
+    trendCtx.fillText('Deviazione in secondi', lx+16, ly);
+    lx += 150;
+  }
+  if(mode === 'rate' || mode === 'both'){
+    trendCtx.fillStyle='#38bdf8';
+    trendCtx.beginPath(); trendCtx.arc(lx+5, ly-3, 5, 0, Math.PI*2); trendCtx.fill();
+    trendCtx.fillStyle='#cbd5e1';
+    trendCtx.fillText('Scarto in secondi/giorno', lx+16, ly);
+  }
+}
+
+function renderAll(){
+  renderHistory();
+  renderSummary();
+  drawTrend();
+  refreshFileInfo();
+}
+
+async function saveJSON(){
+  clearError();
+  const payload=JSON.stringify(data,null,2);
+  const blob=new Blob([payload],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=currentFilename();
+  a.click();
+  stateEl.innerText='File scaricato con lo stesso nome';
+  refreshFileInfo();
+}
+
+function loadSession(e){
+  clearError();
+  const file=e.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=function(){
+    try{
+      data=JSON.parse(reader.result);
+      if(!data.measurements) data.measurements=[];
+      if(!data.version) data.version=4;
+      if(!data.dial_cycle_hours) data.dial_cycle_hours=12;
+      // backward compatibility
+      data.measurements = data.measurements.map(m => {
+        if(m.offset_seconds == null){
+          const realS = m.real_seconds_of_day != null ? m.real_seconds_of_day : (m.real_ts ? secOfDay(new Date(m.real_ts)) : 0);
+          const watchS = m.watch_seconds != null ? m.watch_seconds : 0;
+          return {...m, real_seconds_of_day: realS, offset_seconds: offsetForReading(realS, watchS, data.dial_cycle_hours)};
+        }
+        return m;
+      });
+      watchNameEl.value=data.watch||'';
+      dialCycleEl.value=String(data.dial_cycle_hours||12);
+      openedFilename=file.name;
+      renderAll();
+      stateEl.innerText='Sessione caricata';
+    }catch(err){
+      showError('File JSON non valido');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function resetAll(){
+  clearError();
+  capture=null;
+  openedFilename=null;
+  data={version:4,watch:'',dial_cycle_hours:12,measurements:[]};
+  watchNameEl.value=''; hEl.value=''; mEl.value=''; sEl.value=''; fileLoader.value=''; dialCycleEl.value='12';
+  shotTs.innerText='—'; stateEl.innerText=mediaStream?'Camera attiva':'In attesa';
+  video.style.display='block'; canvas.style.display='none';
+  updateManualReadout(); renderAll();
+}
+
+
+function triggerFeedback(el){
+  try{
+    if (navigator.vibrate) navigator.vibrate(20);
+  }catch(e){}
+  if(el){
+    el.classList.remove('clicked');
+    void el.offsetWidth;
+    el.classList.add('clicked');
+    setTimeout(()=>el.classList.remove('clicked'),220);
+  }
+}
+
+document.getElementById('startCameraBtn').onclick=(e)=>{triggerFeedback(e.currentTarget); startCamera();};
+document.getElementById('captureBtn').onclick=(e)=>{triggerFeedback(e.currentTarget); capturePhoto();};
+document.getElementById('retakeBtn').onclick=(e)=>{triggerFeedback(e.currentTarget); retakePhoto();};
+document.getElementById('saveJsonBtn').onclick=(e)=>{triggerFeedback(e.currentTarget); saveJSON();};
+document.getElementById('newBtn').onclick=(e)=>{triggerFeedback(e.currentTarget); newSession();};
+document.getElementById('saveMeasureBtn').onclick=(e)=>{triggerFeedback(e.currentTarget); saveMeasurement();};
+document.getElementById('deleteLastBtn').onclick=(e)=>{triggerFeedback(e.currentTarget); deleteLast();};
+document.getElementById('resetBtn').onclick=(e)=>{triggerFeedback(e.currentTarget); resetAll();};
+fileLoader.onchange=loadSession;
+[hEl,mEl,sEl,dialCycleEl].forEach(el=>el.addEventListener('input',()=>{if(data) data.dial_cycle_hours=currentCycleHours(); updateManualReadout(); renderSummary(); drawTrend();}));
+watchNameEl.addEventListener('input',refreshFileInfo);
+window.addEventListener('resize',drawTrend);
+if(chartModeEl) chartModeEl.addEventListener('input', drawTrend);
+
+renderAll();
+updateManualReadout();
+refreshFileInfo();
+</script>
+</body>
+</html>
